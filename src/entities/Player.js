@@ -28,8 +28,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             roll: false, rollPrev: false,
         };
 
-        // 娉ㄥ唽閿洏浜嬩欢
-        this._onKeyDown = (e) => {
+        // 娉ㄥ唽閿洏浜嬩欢锛堢敤鍘熺敓 DOM锛屽洜涓?Phaser 鐨?keydown 浼犵殑涓嶆槸 DOM Event锛?        this._onKeyDown = (e) => {
             switch (e.code) {
                 case 'ArrowLeft': case 'KeyA': this._keys.left = true; break;
                 case 'ArrowRight': case 'KeyD': this._keys.right = true; break;
@@ -48,16 +47,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             }
         };
 
-        scene.input.keyboard.on('keydown', this._onKeyDown);
-        scene.input.keyboard.on('keyup', this._onKeyUp);
+        window.addEventListener('keydown', this._onKeyDown);
+        window.addEventListener('keyup', this._onKeyUp);
     }
 
     destroy() {
         // 娓呯悊閿洏浜嬩欢
-        if (this.scene && this.scene.input && this.scene.input.keyboard) {
-            this.scene.input.keyboard.off('keydown', this._onKeyDown);
-            this.scene.input.keyboard.off('keyup', this._onKeyUp);
-        }
+        window.removeEventListener('keydown', this._onKeyDown);
+        window.removeEventListener('keyup', this._onKeyUp);
         if (this._rollTimer) this._rollTimer.remove();
         if (this._attackTimer) this._attackTimer.remove();
         super.destroy();
