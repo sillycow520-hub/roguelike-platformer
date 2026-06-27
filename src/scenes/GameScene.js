@@ -1,4 +1,4 @@
-import { GAME_WIDTH, GAME_HEIGHT, TILE_SIZE, COLORS, ROOM_WIDTH, ROOM_HEIGHT, MAX_ROOMS } from '../constants.js';
+import { GAME_WIDTH, GAME_HEIGHT, TILE_SIZE, COLORS } from '../constants.js';
 import Player from '../entities/Player.js';
 
 export default class GameScene extends Phaser.Scene {
@@ -7,288 +7,262 @@ export default class GameScene extends Phaser.Scene {
     }
 
     create() {
-        // 背景
         this.cameras.main.setBackgroundColor(COLORS.bg);
+        this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT);
 
-        // 世界边界（大一点，方便地图扩展）
-        this.physics.world.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
-
-        // 创建地面 & 平台
+        // 鍦伴潰 & 骞冲彴
         this.platforms = this.physics.add.staticGroup();
         this.walls = this.physics.add.staticGroup();
         this.generateLevel();
 
-        // 玩家
-        this.player = new Player(this, 80, GAME_HEIGHT - 100);
+        // 鐜╁
+        this.player = new Player(this, 80, GAME_HEIGHT - 60);
 
-        // 敌人
+        // 鏁屼汉
         this.enemies = this.physics.add.group();
         this.spawnEnemies();
 
-        // 金币
-        this.coins = this.physics.add.group();
+        // 閲戝竵锛堟櫘閫氱粍锛屾棤鐗╃悊鈥斺€旇В鍐抽噸褰遍棶棰橈級
+        this.coins = this.add.group();
         this.spawnCoins();
 
-        // 出口
+        // 鍑哄彛
         this.doors = this.physics.add.staticGroup();
         this.spawnDoor();
 
-        // 碰撞
+        // 纰版挒
         this.physics.add.collider(this.player, this.platforms);
         this.physics.add.collider(this.player, this.walls);
         this.physics.add.collider(this.enemies, this.platforms);
-        this.physics.add.collider(this.coins, this.platforms);
+        this.physics.add.collider(this.enemies, this.walls);
 
-        // 敌人碰撞玩家
-        this.physics.add.overlap(this.player, this.enemies, this.hitEnemy, null, this);
+        // 鏁屼汉鎾炵帺瀹?        this.physics.add.overlap(this.player, this.enemies, (p, e) => {
+            if (p.active && e.active) p.takeDamage(1);
+        }, null, this);
 
-        // 金币碰撞玩家
-        this.physics.add.overlap(this.player, this.coins, this.collectCoin, null, this);
+        // 鍑哄彛
+        this.physics.add.overlap(this.player, this.doors, (p, d) => {
+            if (!d.active) return;
+            const room = d.getData('targetRoom') || 1;
+            p.setPosition(room * GAME_WIDTH - GAME_WIDTH + 80, GAME_HEIGHT - 60);
+            p.setVelocity(0, 0);
+            this.currentRoom = room;
+        }, null, this);
 
-        // 出口碰撞玩家
-        this.physics.add.overlap(this.player, this.doors, this.nextRoom, null, this);
-
-        // 相机跟随
+        // 鐩告満
         this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-        this.cameras.main.setZoom(1);
-        this.cameras.main.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT * 2);
+        this.cameras.main.setBounds(0, 0, GAME_WIDTH * 3, GAME_HEIGHT);
 
-        // HUD（固定相机）
+        this.currentRoom = 1;
         this.createHUD();
 
-        // 当前房间
-        this.currentRoom = 1;
+        // 閲戝竵鏀堕泦锛堥€愬抚妫€娴嬶紝鏃犵墿鐞嗙鎾烇級
+        this._coinCheck = () => {
+            if (!this.player || !this.player._alive) return;
+            const px = this.player.x;
+            const py = this.player.y;
+            this.coins.getChildren().forEach(c => {
+                if (!c.active) return;
+                const dx = px - c.x;
+                const dy = py - c.y;
+                if (dx * dx + dy * dy < 900) { // 鍗婂緞30px
+                    this.spawnParticles(c.x, c.y, 0xf1c40f);
+                    c.destroy();
+                }
+            });
+        };
     }
 
+    // ========== 鍦板浘鐢熸垚 ==========
+
     generateLevel() {
-        // 简单生成：三个区域的平台布局
-        const worldWidth = GAME_WIDTH * 3;
-
-        // 地面（每段之间留间隙创造"房间"感）
         for (let section = 0; section < 3; section++) {
-            const offsetX = section * GAME_WIDTH;
+            const ox = section * GAME_WIDTH;
+            const groundY = GAME_HEIGHT - TILE_SIZE / 2;
 
-            // 地面
-            for (let x = 0; x < GAME_WIDTH / TILE_SIZE; x++) {
-                this.platforms.create(
-                    offsetX + x * TILE_SIZE + TILE_SIZE / 2,
-                    GAME_HEIGHT - TILE_SIZE / 2,
-                    'ground'
-                );
-                // 地下层
-                for (let y = 1; y < 3; y++) {
-                    this.platforms.create(
-                        offsetX + x * TILE_SIZE + TILE_SIZE / 2,
-                        GAME_HEIGHT + y * TILE_SIZE - TILE_SIZE / 2,
-                        'ground'
-                    );
+            // 鍦伴潰 + 鍦颁笅灞?            for (let x = 0; x < GAME_WIDTH / TILE_SIZE; x++) {
+                for (let y = 0; y < 3; y++) {
+                    this.platforms.create(ox + x * TILE_SIZE + TILE_SIZE / 2, groundY + y * TILE_SIZE, 'ground');
                 }
             }
 
-            // 平台（每个房间不同布局）
-            const roomSeed = section;
-            this.generatePlatforms(offsetX, roomSeed);
+            this.generatePlatforms(ox, section);
 
-            // 墙壁
-            if (section > 0) {
+            // 鎴块棿闂村澹?            if (section > 0) {
                 for (let y = 0; y < GAME_HEIGHT / TILE_SIZE; y++) {
-                    this.walls.create(
-                        offsetX - TILE_SIZE / 2,
-                        y * TILE_SIZE + TILE_SIZE / 2,
-                        'ground'
-                    );
+                    this.walls.create(ox - TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, 'ground');
                 }
             }
         }
     }
 
-    generatePlatforms(offsetX, seed) {
-        const layouts = [
-            // 房间 1: 三层平台
+    generatePlatforms(ox, seed) {
+        // 鎵€鏈夊钩鍙伴兘璁剧疆鍦ㄨ烦寰楀埌鐨勯珮搴?        const layouts = [
+            // 鎴块棿1锛氬钩鍙伴樁姊綆 鈫?楂?            () => {
+                this.addPlatform(ox + 120, GAME_HEIGHT - 140, 4);
+                this.addPlatform(ox + 350, GAME_HEIGHT - 200, 3);
+                this.addPlatform(ox + 550, GAME_HEIGHT - 150, 4);
+            },
+            // 鎴块棿2锛氶€愮骇涓婂崌
             () => {
                 for (let i = 0; i < 4; i++) {
-                    this.addPlatform(offsetX + 100 + i * 120, GAME_HEIGHT - 120, 3);
-                }
-                this.addPlatform(offsetX + 300, GAME_HEIGHT - 200, 2);
-                this.addPlatform(offsetX + 500, GAME_HEIGHT - 280, 3);
-            },
-            // 房间 2: 阶梯
-            () => {
-                for (let i = 0; i < 5; i++) {
-                    this.addPlatform(offsetX + 80 + i * 130, GAME_HEIGHT - 100 - i * 40, 2);
+                    this.addPlatform(ox + 100 + i * 160, GAME_HEIGHT - 100 - i * 35, 3);
                 }
             },
-            // 房间 3: 高低错落
-            () => {
-                this.addPlatform(offsetX + 150, GAME_HEIGHT - 160, 4);
-                this.addPlatform(offsetX + 400, GAME_HEIGHT - 250, 3);
-                this.addPlatform(offsetX + 600, GAME_HEIGHT - 120, 2);
+            // 鎴块棿3锛氬乏鍙冲绉?            () => {
+                this.addPlatform(ox + 100, GAME_HEIGHT - 140, 3);
+                this.addPlatform(ox + 400, GAME_HEIGHT - 210, 4);
+                this.addPlatform(ox + 650, GAME_HEIGHT - 140, 3);
             },
         ];
-
         layouts[seed % layouts.length]();
     }
 
-    addPlatform(x, y, tileCount) {
-        for (let i = 0; i < tileCount; i++) {
+    addPlatform(x, y, count) {
+        for (let i = 0; i < count; i++) {
             this.platforms.create(x + i * TILE_SIZE, y, 'platform');
         }
     }
 
+    // ========== 鏁屼汉 ==========
+
     spawnEnemies() {
-        const enemiesConfig = [
-            { x: 300, y: GAME_HEIGHT - 70 },
-            { x: GAME_WIDTH + 200, y: GAME_HEIGHT - 70 },
-            { x: GAME_WIDTH + 450, y: GAME_HEIGHT - 150 },
-            { x: GAME_WIDTH * 2 + 150, y: GAME_HEIGHT - 70 },
-            { x: GAME_WIDTH * 2 + 400, y: GAME_HEIGHT - 200 },
+        const configs = [
+            { x: 350, y: GAME_HEIGHT - 50, minX: 250, maxX: 500 },
+            { x: GAME_WIDTH + 300, y: GAME_HEIGHT - 50, minX: GAME_WIDTH + 150, maxX: GAME_WIDTH + 500 },
+            { x: GAME_WIDTH + 500, y: GAME_HEIGHT - 180, minX: GAME_WIDTH + 400, maxX: GAME_WIDTH + 700 },
+            { x: GAME_WIDTH * 2 + 200, y: GAME_HEIGHT - 50, minX: GAME_WIDTH * 2 + 100, maxX: GAME_WIDTH * 2 + 400 },
+            { x: GAME_WIDTH * 2 + 500, y: GAME_HEIGHT - 200, minX: GAME_WIDTH * 2 + 400, maxX: GAME_WIDTH * 2 + 700 },
         ];
 
-        enemiesConfig.forEach(cfg => {
-            const enemy = this.enemies.create(cfg.x, cfg.y, 'enemy');
-            enemy.setBounce(0);
-            enemy.setCollideWorldBounds(true);
-            enemy.health = 2;
-            enemy.speed = 50 + Math.random() * 40;
-            enemy.direction = Math.random() > 0.5 ? 1 : -1;
-            enemy.takeDamage = (amount) => {
-                enemy.health -= amount;
-                enemy.setTint(0xffffff);
+        configs.forEach(cf => {
+            const e = this.enemies.create(cf.x, cf.y, 'enemy');
+            e.setBounce(0);
+            e.setCollideWorldBounds(true);
+            e.health = 2;
+            e._speed = 40 + Math.random() * 30;
+            e._dir = Math.random() > 0.5 ? 1 : -1;
+            e._minX = cf.minX;
+            e._maxX = cf.maxX;
+
+            e.takeDamage = (amount) => {
+                if (!e.active) return;
+                e.health -= amount;
+                e.setTint(0xffffff);
                 this.time.delayedCall(80, () => {
-                    if (enemy.active) enemy.clearTint();
+                    if (e.active) e.clearTint();
                 });
-                if (enemy.health <= 0) {
-                    this.spawnParticles(enemy.x, enemy.y, 0xe74c3c);
-                    enemy.destroy();
+                if (e.health <= 0) {
+                    this.spawnParticles(e.x, e.y, 0xe74c3c);
+                    e.destroy();
                 }
             };
         });
     }
 
-    spawnCoins() {
-        const coinPositions = [
-            ...Array.from({ length: 8 }, (_, i) => ({
-                x: 200 + i * 100, y: GAME_HEIGHT - 140
-            })),
-            ...Array.from({ length: 6 }, (_, i) => ({
-                x: GAME_WIDTH + 150 + i * 100, y: GAME_HEIGHT - 160
-            })),
-            ...Array.from({ length: 6 }, (_, i) => ({
-                x: GAME_WIDTH * 2 + 150 + i * 100, y: GAME_HEIGHT - 140
-            })),
-        ];
+    // ========== 閲戝竵 ==========
 
-        coinPositions.forEach(cfg => {
-            const coin = this.coins.create(cfg.x, cfg.y, 'coin');
-            // 浮动动画
+    spawnCoins() {
+        const positions = [];
+        // 鎴块棿1
+        for (let i = 0; i < 6; i++) positions.push({ x: 180 + i * 100, y: GAME_HEIGHT - 170 });
+        // 鎴块棿2
+        for (let i = 0; i < 5; i++) positions.push({ x: GAME_WIDTH + 200 + i * 100, y: GAME_HEIGHT - 130 - i * 30 });
+        // 鎴块棿3
+        for (let i = 0; i < 5; i++) positions.push({ x: GAME_WIDTH * 2 + 200 + i * 100, y: GAME_HEIGHT - 170 });
+
+        positions.forEach(p => {
+            const coin = this.add.image(p.x, p.y, 'coin').setDepth(5);
+            // 娴姩鍔ㄧ敾
             this.tweens.add({
                 targets: coin,
-                y: coin.y - 8,
-                duration: 800,
-                yoyo: true,
-                repeat: -1,
+                y: coin.y - 10,
+                duration: 1000,
+                yoyo: true, repeat: -1,
                 ease: 'Sine.easeInOut',
             });
+            this.coins.add(coin);
         });
     }
 
+    // ========== 鍑哄彛 ==========
+
     spawnDoor() {
-        // 每个区域末尾放一个门
-        for (let section = 0; section < 2; section++) {
+        for (let s = 0; s < 2; s++) {
             const door = this.doors.create(
-                (section + 1) * GAME_WIDTH - 60,
-                GAME_HEIGHT - 60,
+                (s + 1) * GAME_WIDTH - 50,
+                GAME_HEIGHT - 50,
                 'door'
             );
-            door.setData('targetRoom', section + 2);
+            door.setData('targetRoom', s + 2);
+            door.body.setSize(24, 40);
         }
     }
+
+    // ========== 绮掑瓙 ==========
 
     spawnParticles(x, y, color) {
         for (let i = 0; i < 8; i++) {
             const p = this.add.rectangle(x, y, 6, 6, color);
             this.tweens.add({
                 targets: p,
-                x: x + Phaser.Math.Between(-40, 40),
-                y: y + Phaser.Math.Between(-40, 40),
-                alpha: 0,
-                scale: 0,
+                x: x + Phaser.Math.Between(-50, 50),
+                y: y + Phaser.Math.Between(-50, 50),
+                alpha: 0, scale: 0,
                 duration: 400,
                 onComplete: () => p.destroy(),
             });
         }
     }
 
+    // ========== HUD ==========
+
     createHUD() {
-        const hud = this.add.container(0, 0).setScrollFactor(0).setDepth(100);
+        this.add.rectangle(60, 28, 124, 24, 0x222222, 0.85).setScrollFactor(0).setDepth(100);
+        this.hpBar = this.add.rectangle(60, 28, 120, 20, 0xe74c3c).setScrollFactor(0).setDepth(101);
+        this.hpBar.setOrigin(0.5);
 
-        // 血量条背景
-        const hpBg = this.add.rectangle(60, 30, 120, 20, 0x222222, 0.8).setOrigin(0.5);
-        this.hpBar = this.add.rectangle(60, 30, 116, 16, 0xe74c3c).setOrigin(0.5);
+        this.hpText = this.add.text(60, 48, '鉂わ笍 5/5', {
+            fontSize: '13px', color: '#ecf0f1', fontFamily: 'monospace',
+        }).setScrollFactor(0).setDepth(101).setOrigin(0.5);
 
-        // HP 文字
-        this.hpText = this.add.text(60, 55, '❤️ ' + this.player.health + '/' + this.player.maxHealth, {
-            fontSize: '14px',
-            color: '#ecf0f1',
-            fontFamily: 'monospace',
-        }).setOrigin(0.5);
+        this.roomText = this.add.text(GAME_WIDTH - 60, 28, 'Room 1', {
+            fontSize: '16px', color: '#ecf0f1', fontFamily: 'monospace',
+        }).setScrollFactor(0).setDepth(101).setOrigin(0.5);
 
-        // 房间指示
-        this.roomText = this.add.text(GAME_WIDTH - 80, 30, '🏠 Room 1', {
-            fontSize: '16px',
-            color: '#ecf0f1',
-            fontFamily: 'monospace',
-        }).setOrigin(0.5);
+        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 14, '鈫?鈫?绉诲姩 | 鈫?W/Space 璺宠穬 | J 鏀诲嚮 | K/Shift 缈绘粴', {
+            fontSize: '11px', color: '#7f8c8d', fontFamily: 'monospace',
+        }).setScrollFactor(0).setDepth(100).setOrigin(0.5);
+    }
 
-        // 操作提示
-        this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 16, '← → 移动 | ↑/Space 跳跃 | J 攻击 | K/Shift 翻滚', {
-            fontSize: '11px',
-            color: '#7f8c8d',
-            fontFamily: 'monospace',
-        }).setOrigin(0.5).setScrollFactor(0).setDepth(100);
+    // ========== 姣忓抚鏇存柊 ==========
 
-        hud.add([hpBg, this.hpBar, this.hpText, this.roomText]);
+    update() {
+        if (this.player?.active) {
+            this.player.update();
+        }
+        if (this._coinCheck) this._coinCheck();
+
+        // 鏁屼汉宸￠€?        const enemies = this.enemies;
+        if (enemies) {
+            enemies.getChildren().forEach(e => {
+                if (!e.active) return;
+                if (e.x <= e._minX || e.x >= e._maxX) {
+                    e._dir *= -1;
+                    e.setFlipX(e._dir < 0);
+                }
+                e.setVelocityX(e._speed * e._dir);
+            });
+        }
+
+        this.updateHUD();
     }
 
     updateHUD() {
-        const hpPercent = this.player.health / this.player.maxHealth;
-        this.hpBar.setScale(hpPercent, 1);
-        this.hpText.setText('❤️ ' + this.player.health + '/' + this.player.maxHealth);
-        this.roomText.setText('🏠 Room ' + this.currentRoom);
-    }
-
-    hitEnemy(player, enemy) {
-        player.takeDamage(1);
-    }
-
-    collectCoin(player, coin) {
-        this.spawnParticles(coin.x, coin.y, 0xf1c40f);
-        coin.destroy();
-    }
-
-    nextRoom(player, door) {
-        const targetX = door.getData('targetRoom') * GAME_WIDTH - GAME_WIDTH + 80;
-        player.setPosition(targetX, GAME_HEIGHT - 100);
-        player.setVelocity(0, 0);
-        this.currentRoom = door.getData('targetRoom');
-    }
-
-    update(time, delta) {
-        if (this.player?.active) {
-            this.player.update(time, delta);
-        }
-
-        // 敌人巡逻
-        this.enemies?.getChildren().forEach(enemy => {
-            if (!enemy.active) return;
-            // 边界反弹
-            if (enemy.x < enemy.getData('minX') || enemy.x > enemy.getData('maxX')) {
-                enemy.direction *= -1;
-                enemy.setFlipX(enemy.direction < 0);
-            }
-            enemy.setVelocityX(enemy.speed * enemy.direction);
-        });
-
-        this.updateHUD();
+        if (!this.player) return;
+        const pct = this.player.health / this.player.maxHealth;
+        this.hpBar.setScale(Math.max(0, pct), 1);
+        this.hpText.setText('鉂わ笍 ' + this.player.health + '/' + this.player.maxHealth);
+        this.roomText.setText('Room ' + this.currentRoom);
     }
 }
