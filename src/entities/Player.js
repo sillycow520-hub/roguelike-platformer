@@ -1,3 +1,5 @@
+超级牛-壹号: 06-28 01:46:46
+```javascript
 import { PLAYER_SPEED, PLAYER_JUMP, PLAYER_ROLL_SPEED, PLAYER_ROLL_DURATION, ATTACK_DURATION, ATTACK_RANGE, COLORS } from '../constants.js';
 
 export default class Player extends Phaser.Physics.Arcade.Sprite {
@@ -7,42 +9,38 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         scene.add.existing(this);
         scene.physics.add.existing(this);
 
-        // 物理属性
         this.body.setSize(24, 32);
         this.setCollideWorldBounds(true);
 
-        // 状态
         this.isRolling = false;
         this.isAttacking = false;
         this.facingRight = true;
         this.health = 5;
         this.maxHealth = 5;
         this.invincible = false;
+        this._alive = true;
 
-        // 输入
         this.cursors = scene.input.keyboard.createCursorKeys();
-        this.keys = scene.input.keyboard.addKeys({
-            w: Phaser.Input.Keyboard.KeyCodes.W,
-            a: Phaser.Input.Keyboard.KeyCodes.A,
-            s: Phaser.Input.Keyboard.KeyCodes.S,
-            d: Phaser.Input.Keyboard.KeyCodes.D,
-            space: Phaser.Input.Keyboard.KeyCodes.SPACE,
-            j: Phaser.Input.Keyboard.KeyCodes.J,   // 攻击
-            k: Phaser.Input.Keyboard.KeyCodes.K,    // 翻滚
-            shift: Phaser.Input.Keyboard.KeyCodes.SHIFT,
-        });
+        this.keyJ = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.J);
+        this.keyK = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K);
+        this.keyShift = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT);
+        this.keyA = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+        this.keyD = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D);
+        this.keyW = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W);
+        this.keySpace = scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
         this.attackBox = null;
+        this.attackTimer = null;
     }
 
     update(time, delta) {
+        if (!this._alive || !this.scene) return;
         if (this.isRolling) return;
 
         const onGround = this.body.blocked.down || this.body.touching.down;
 
-        // ---- 左右移动 ----
-        const moveLeft = this.cursors.left.isDown || this.keys.a.isDown;
-        const moveRight = this.cursors.right.isDown || this.keys.d.isDown;
+        const moveLeft = this.cursors.left.isDown || this.keyA.isDown;
+        const moveRight = this.cursors.right.isDown || this.keyD.isDown;
 
         if (moveLeft) {
             this.setVelocityX(-PLAYER_SPEED);
@@ -56,23 +54,19 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
             this.setVelocityX(0);
         }
 
-        // ---- 跳跃 ----
-        const jumpPressed = this.cursors.up.isDown || this.keys.w.isDown || this.keys.space.isDown;
+        const jumpPressed = this.cursors.up.isDown || this.keyW.isDown || this.keySpace.isDown;
         if (jumpPressed && onGround) {
             this.setVelocityY(PLAYER_JUMP);
         }
 
-        // ---- 翻滚 ----
-        if (Phaser.Input.Keyboard.JustDown(this.keys.k) || Phaser.Input.Keyboard.JustDown(this.keys.shift)) {
+        if (Phaser.Input.Keyboard.JustDown(this.keyK) || Phaser.Input.Keyboard.JustDown(this.keyShift)) {
             this.roll();
         }
 
-        // ---- 攻击 ----
-        if (Phaser.Input.Keyboard.JustDown(this.keys.j)) {
+        if (Phaser.Input.Keyboard.JustDown(this.keyJ)) {
             this.attack();
         }
 
-        // 更新攻击框位置
         if (this.attackBox && this.attackBox.active) {
             const offsetX = this.facingRight ? ATTACK_RANGE : -ATTACK_RANGE - 16;
             this.attackBox.setPosition(this.x + offsetX, this.y);
@@ -87,6 +81,7 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
         this.setVelocityY(0);
 
         this.scene.time.delayedCall(PLAYER_ROLL_DURATION, () => {
+            if (!this._alive) return;
             this.isRolling = false;
             this.setAlpha(1);
             this.setVelocityX(0);
@@ -94,62 +89,78 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     attack() {
-        if (this.isAttacking) return;
+        if (this.isAttacking || !this.scene) return;
         this.isAttacking = true;
 
-        // 显示攻击框
-        const offsetX = this.facingRight ? ATTACK_RANGE : -ATTACK_RANGE - 16;
-        if (!this.attackBox) {
-            this.attackBox = this.scene.add.rectangle(
-                this.x + offsetX, this.y,
-                32, 32, COLORS.playerHit, 0.6
-            );
-            this.scene.physics.add.existing(this.attackBox, false);
-            this.attackBox.body.setAllowGravity(false);
-        } else {
-            this.attackBox.setActive(true).setVisible(true);
-            this.attackBox.setPosition(this.x + offsetX, this.y);
-        }
+        try {
+            const offsetX = this.facingRight ? ATTACK_RANGE : -ATTACK_RANGE - 16;
 
-        // 检测攻击范围内的敌人
-        this.scene.enemies?.getChildren().forEach(enemy => {
-            if (!enemy.active) return;
-            const dist = Phaser.Math.Distance.Between(
-                this.attackBox.x, this.attackBox.y,
-                enemy.x, enemy.y
-            );
-            if (dist < ATTACK_RANGE + 16) {
-                enemy.takeDamage(ATTACK_DAMAGE);
+            if (!this.attackBox) {
+                this.attackBox = this.scene.add.rectangle(
+                    this.x + offsetX, this.y,
+                    32, 32, COLORS.playerHit, 0.6
+                );
+                this.scene.physics.add.existing(this.attackBox, false);
+                this.attackBox.body.setAllowGravity(false);
+                this.attackBox.setDepth(10);
+            } else {
+                this.attackBox.setActive(true).setVisible(true);
+                this.attackBox.setPosition(this.x + offsetX, this.y);
             }
-        });
 
-        // 攻击动画结束后隐藏攻击框
-        this.scene.time.delayedCall(ATTACK_DURATION, () => {
+            const enemies = this.scene.enemies;
+            if (enemies && enemies.getChildren) {
+                const children = enemies.getChildren().slice();
+                for (const enemy of children) {
+                    if (!enemy || !enemy.active) continue;
+                    const dist = Phaser.Math.Distance.Between(
+                        this.attackBox.x, this.attackBox.y,
+                        enemy.x, enemy.y
+                    );
+                    if (dist < ATTACK_RANGE + 16 && typeof enemy.takeDamage === 'function') {
+                        enemy.takeDamage(ATTACK_DAMAGE);
+                    }
+                }
+            }
+
+            if (this.attackTimer) this.attackTimer.remove();
+            this.attackTimer = this.scene.time.delayedCall(ATTACK_DURATION, () => {
+                if (!this._alive) return;
+                if (this.attackBox) {
+                    this.attackBox.setActive(false).setVisible(false);
+                }
+                this.isAttacking = false;
+            });
+        } catch (e) {
+```
+
+超级牛-壹号: 06-28 01:46:46
+```javascript
+           console.warn('攻击出错:', e);
+            this.isAttacking = false;
             if (this.attackBox) {
                 this.attackBox.setActive(false).setVisible(false);
             }
-            this.isAttacking = false;
-        });
+        }
     }
 
     takeDamage(amount) {
-        if (this.invincible || this.isRolling) return;
+        if (this.invincible || this.isRolling || !this._alive) return;
         this.health -= amount;
         this.invincible = true;
 
-        // 闪红动画
         this.scene.tweens.add({
             targets: this,
             alpha: { from: 0.3, to: 1 },
             duration: 100,
             repeat: 5,
             onComplete: () => {
+                if (!this._alive) return;
                 this.invincible = false;
                 this.setAlpha(1);
             }
         });
 
-        // 击退
         const knockDir = this.facingRight ? -1 : 1;
         this.setVelocityX(knockDir * 200);
         this.setVelocityY(-150);
@@ -160,6 +171,14 @@ export default class Player extends Phaser.Physics.Arcade.Sprite {
     }
 
     die() {
+        this._alive = false;
+        this.isAttacking = false;
+        this.isRolling = false;
+        if (this.attackTimer) this.attackTimer.remove();
+        if (this.attackBox) {
+            this.attackBox.destroy();
+            this.attackBox = null;
+        }
         this.scene.scene.restart();
     }
 }
