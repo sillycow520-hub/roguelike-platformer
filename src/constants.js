@@ -8,21 +8,21 @@ export const TILE_SIZE = 32;
 // 物理
 export const GRAVITY = 800;
 export const PLAYER_SPEED = 180;
-export const PLAYER_JUMP = -380;
+export const PLAYER_JUMP = -450;        // 从 -380 调到 -450，跳得更高
 export const PLAYER_ROLL_SPEED = 400;
 export const PLAYER_ROLL_DURATION = 300; // ms
 
 // 攻击
-export const ATTACK_DURATION = 200;  // ms
-export const ATTACK_RANGE = 40;
+export const ATTACK_DURATION = 150;     // ms
+export const ATTACK_RANGE = 45;
 export const ATTACK_DAMAGE = 1;
 
 // 地图
-export const ROOM_WIDTH = 20;   // tiles
-export const ROOM_HEIGHT = 14;  // tiles
+export const ROOM_WIDTH = 20;
+export const ROOM_HEIGHT = 14;
 export const MAX_ROOMS = 5;
 
-// 颜色方案（临时，后面替换素材）
+// 颜色方案（占位，后面替换素材）
 export const COLORS = {
     player: 0x3498db,
     playerHit: 0xe74c3c,
